@@ -9,7 +9,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest   # Wine yok, doğrudan Windows runner
 
     steps:
       # ── 1. Kodu al ────────────────────────────────────────────────────────
@@ -22,73 +22,41 @@ jobs:
         with:
           python-version: "3.11"
 
-      # ── 3. Wine + MinGW + bağımlılıklar ──────────────────────────────────
-      - name: Sistem bağımlılıklarını kur
+      # ── 3. Bağımlılıkları kur ─────────────────────────────────────────────
+      - name: PyQt5 ve PyInstaller kur
         run: |
-          sudo dpkg --add-architecture i386
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
-            wine64 wine32 \
-            python3-pip \
-            upx-ucl \
-            zip
+          python -m pip install --upgrade pip
+          pip install PyQt5==5.15.10 PyQtWebEngine==5.15.6 pyinstaller==6.6.0
 
-      # ── 4. Wine içine Python 3.11 kur ────────────────────────────────────
-      - name: Wine Python kur
+      # ── 4. .exe derle ─────────────────────────────────────────────────────
+      - name: PyInstaller ile EXE derle
         run: |
-          # Python 3.11 Windows kurucusunu indir
-          curl -fsSL -o /tmp/python-311.exe \
-            "https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe"
+          pyinstaller `
+            --onefile `
+            --noconsole `
+            --name WindBrowser `
+            --distpath dist_win `
+            windbrowser.py
 
-          # Sessiz kurulum
-          WINEDEBUG=fixme-all DISPLAY="" \
-            wine /tmp/python-311.exe /quiet \
-              InstallAllUsers=1 \
-              PrependPath=1 \
-              TargetDir="C:\\Python311" 2>/dev/null || true
-
-          # pip güncelle
-          WINEDEBUG=fixme-all DISPLAY="" \
-            wine "C:\\Python311\\python.exe" -m pip install --upgrade pip --quiet 2>/dev/null
-
-      # ── 5. PyQt5, PyQtWebEngine, PyInstaller kur ─────────────────────────
-      - name: Wine içine PyQt5 ve PyInstaller kur
+      # ── 5. EXE kontrol ────────────────────────────────────────────────────
+      - name: EXE dogrula
         run: |
-          WINEDEBUG=fixme-all DISPLAY="" \
-            wine "C:\\Python311\\python.exe" -m pip install \
-              PyQt5==5.15.10 \
-              PyQtWebEngine==5.15.6 \
-              pyinstaller==6.6.0 \
-              --quiet 2>/dev/null
-
-      # ── 6. .exe derle (PyInstaller) ───────────────────────────────────────
-      - name: PyInstaller ile .exe derle
-        run: |
-          WINEDEBUG=fixme-all DISPLAY="" \
-            wine "C:\\Python311\\Scripts\\pyinstaller.exe" \
-              --onefile \
-              --noconsole \
-              --name WindBrowser \
-              --distpath dist_win \
-              windbrowser.py 2>/dev/null
-
-          # Kontrol
-          if [ ! -f "dist_win/WindBrowser.exe" ]; then
-            echo "HATA: WindBrowser.exe olusturulamadi!" >&2
+          if (Test-Path "dist_win\WindBrowser.exe") {
+            $size = (Get-Item "dist_win\WindBrowser.exe").Length / 1MB
+            Write-Host ("WindBrowser.exe olustu: {0:N1} MB" -f $size)
+          } else {
+            Write-Error "WindBrowser.exe olusturulamadi!"
             exit 1
-          fi
-          echo "WindBrowser.exe boyutu: $(du -sh dist_win/WindBrowser.exe | cut -f1)"
+          }
 
-      # ── 7. .wind paketi oluştur (.tar.gz mantığında) ──────────────────────
+      # ── 6. .wind paketi oluştur ───────────────────────────────────────────
       - name: WindBrowser.wind paketi olustur
         run: |
-          mkdir -p wind_pkg/WindBrowser
+          New-Item -ItemType Directory -Force -Path wind_pkg\WindBrowser | Out-Null
 
-          # Uygulama dosyası
-          cp windbrowser.py wind_pkg/WindBrowser/windbrowser.py
+          Copy-Item windbrowser.py wind_pkg\WindBrowser\windbrowser.py
 
-          # manifest.txt
-          cat > wind_pkg/WindBrowser/manifest.txt << 'MANIFEST'
+          @"
           AppName: WindBrowser
           Version: 1.0.0
           Description: WindOS Web Tarayicisi
@@ -96,52 +64,39 @@ jobs:
           License: MIT
           MinOS: WindOS 1.0
           Requires: PyQt5, PyQtWebEngine
-          MANIFEST
+          "@ | Out-File -Encoding UTF8 wind_pkg\WindBrowser\manifest.txt
 
-          # README
-          cat > wind_pkg/WindBrowser/README.txt << 'README'
+          @"
           WindBrowser v1.0 - WindOS Web Tarayicisi
-          ==========================================
-          Kurulum:
-            wind install WindBrowser.wind
-          Calistirma:
-            python windbrowser.py
-          README
+          =========================================
+          Kurulum : wind install WindBrowser.wind
+          Calistir: python windbrowser.py
+          "@ | Out-File -Encoding UTF8 wind_pkg\WindBrowser\README.txt
 
-          # .wind = .tar.gz
-          cd wind_pkg
-          tar -czf ../WindBrowser.wind WindBrowser/
-          cd ..
+          # .wind = tar.gz (7-Zip ile)
+          7z a -tgzip WindBrowser.wind wind_pkg\WindBrowser\*
+          Write-Host "WindBrowser.wind olustu"
 
-          echo "WindBrowser.wind boyutu: $(du -sh WindBrowser.wind | cut -f1)"
-
-      # ── 8. Her şeyi zip'e topla ───────────────────────────────────────────
-      - name: Artifact zip olustur
+      # ── 7. Release zip ────────────────────────────────────────────────────
+      - name: Release ZIP olustur
         run: |
-          mkdir -p release_bundle
+          New-Item -ItemType Directory -Force -Path release_bundle | Out-Null
 
-          cp dist_win/WindBrowser.exe release_bundle/WindBrowser.exe
-          cp WindBrowser.wind         release_bundle/WindBrowser.wind
+          Copy-Item dist_win\WindBrowser.exe release_bundle\WindBrowser.exe
+          Copy-Item WindBrowser.wind         release_bundle\WindBrowser.wind
 
-          # Sürüm notu
-          cat > release_bundle/RELEASE_NOTES.txt << 'NOTES'
-          WindBrowser v1.0 - Surum Paketi
-          ================================
+          @"
+          WindBrowser v1.0 - Surum Notlari
+          ==================================
           WindBrowser.exe  : Windows 10/11 icin calistirilebilir dosya
           WindBrowser.wind : WindOS icin kurulum paketi
+          "@ | Out-File -Encoding UTF8 release_bundle\RELEASE_NOTES.txt
 
-          Kullanim:
-            Windows : WindBrowser.exe dosyasini calistirin
-            WindOS  : wind install WindBrowser.wind komutunu kullanin
-          NOTES
+          Compress-Archive -Path release_bundle\* -DestinationPath WindBrowser-Release.zip
+          $size = (Get-Item WindBrowser-Release.zip).Length / 1MB
+          Write-Host ("Release ZIP: {0:N1} MB" -f $size)
 
-          cd release_bundle
-          zip -r ../WindBrowser-Release.zip .
-          cd ..
-
-          echo "Release zip boyutu: $(du -sh WindBrowser-Release.zip | cut -f1)"
-
-      # ── 9. Artifact yukle ─────────────────────────────────────────────────
+      # ── 8. Artifact yükle ─────────────────────────────────────────────────
       - name: Artifact yukle
         uses: actions/upload-artifact@v4
         with:
@@ -149,14 +104,11 @@ jobs:
           path: WindBrowser-Release.zip
           retention-days: 30
 
-      # ── 10. Ozet ─────────────────────────────────────────────────────────
+      # ── 9. Özet ───────────────────────────────────────────────────────────
       - name: Build ozeti
         run: |
-          echo ""
-          echo "╔══════════════════════════════════════╗"
-          echo "║  WindBrowser Build Tamamlandi!       ║"
-          echo "╠══════════════════════════════════════╣"
-          echo "║  WindBrowser.exe  : $(du -sh dist_win/WindBrowser.exe | cut -f1)"
-          echo "║  WindBrowser.wind : $(du -sh WindBrowser.wind | cut -f1)"
-          echo "║  Release.zip      : $(du -sh WindBrowser-Release.zip | cut -f1)"
-          echo "╚══════════════════════════════════════╝"
+          Write-Host ""
+          Write-Host "WindBrowser.exe  : $((Get-Item dist_win\WindBrowser.exe).Length / 1MB -as [int]) MB"
+          Write-Host "WindBrowser.wind : $((Get-Item WindBrowser.wind).Length / 1KB -as [int]) KB"
+          Write-Host "Release.zip      : $((Get-Item WindBrowser-Release.zip).Length / 1MB -as [int]) MB"
+          Write-Host "Build basarili!"
