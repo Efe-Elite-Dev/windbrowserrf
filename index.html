@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CloudBrowser</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --sky:#0b1a2e;--toolbar:#0d2040;--tab-bar:#091528;
+  --glass:rgba(255,255,255,0.06);--border:rgba(255,255,255,0.1);
+  --blue:#4fa3e3;--cyan:#38c9e8;--green:#40dc80;
+  --text:#dceeff;--muted:rgba(180,220,255,0.55);
+  --radius:8px;
+}
+html,body{height:100%;overflow:hidden;background:var(--sky);color:var(--text);font-family:system-ui,sans-serif}
+
+/* ── ANIMATED SKY ── */
+body::before{
+  content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(ellipse 80% 50% at 20% 10%,rgba(30,80,160,0.4) 0%,transparent 60%),
+    radial-gradient(ellipse 60% 40% at 80% 5%,rgba(20,60,130,0.3) 0%,transparent 55%),
+    radial-gradient(ellipse 100% 60% at 50% 100%,rgba(5,15,35,0.9) 0%,transparent 70%);
+}
+.clouds{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+.cloud{position:absolute;border-radius:50%;filter:blur(40px);opacity:0.07;animation:drift linear infinite}
+.c1{width:500px;height:160px;background:#a0c8f0;top:5%;animation-duration:60s;animation-delay:0s}
+.c2{width:380px;height:120px;background:#c0d8f8;top:18%;animation-duration:80s;animation-delay:-30s}
+.c3{width:280px;height:100px;background:#80aee8;top:35%;animation-duration:50s;animation-delay:-15s}
+@keyframes drift{from{transform:translateX(-600px)}to{transform:translateX(calc(100vw + 600px))}}
+
+/* ── LAYOUT ── */
+#app{position:relative;z-index:10;display:flex;flex-direction:column;height:100vh}
+
+/* ── TAB BAR ── */
+#tab-bar{
+  display:flex;align-items:flex-end;gap:2px;
+  padding:6px 8px 0;background:var(--tab-bar);
+  border-bottom:1px solid var(--border);flex-shrink:0;
+  overflow-x:auto;scrollbar-width:none;
+}
+#tab-bar::-webkit-scrollbar{display:none}
+
+.tab{
+  display:flex;align-items:center;gap:6px;
+  min-width:120px;max-width:200px;
+  padding:7px 10px;border-radius:6px 6px 0 0;
+  background:var(--glass);border:1px solid var(--border);border-bottom:none;
+  cursor:pointer;font-size:12px;color:var(--muted);
+  white-space:nowrap;transition:background .15s,color .15s;flex-shrink:0;
+}
+.tab:hover{background:rgba(255,255,255,0.09);color:var(--text)}
+.tab.active{background:rgba(79,163,227,0.18);border-color:rgba(79,163,227,0.5);color:var(--text);font-weight:500}
+.tab-title{flex:1;overflow:hidden;text-overflow:ellipsis}
+.tab-x{
+  width:16px;height:16px;border-radius:4px;font-size:11px;
+  display:flex;align-items:center;justify-content:center;
+  opacity:0;transition:opacity .15s,background .15s;
+}
+.tab:hover .tab-x{opacity:1}
+.tab-x:hover{background:rgba(255,80,80,0.35)}
+
+#new-tab{
+  padding:7px 12px;border-radius:6px 6px 0 0;
+  background:transparent;border:1px solid transparent;border-bottom:none;
+  cursor:pointer;color:var(--muted);font-size:18px;line-height:1;flex-shrink:0;
+  transition:color .15s;
+}
+#new-tab:hover{color:var(--blue)}
+
+/* ── TOOLBAR ── */
+#toolbar{
+  display:flex;align-items:center;gap:6px;
+  padding:8px 10px;background:var(--toolbar);
+  border-bottom:1px solid var(--border);flex-shrink:0;
+}
+
+.btn{
+  width:30px;height:30px;display:flex;align-items:center;justify-content:center;
+  background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);
+  cursor:pointer;color:var(--muted);font-size:15px;transition:all .15s;flex-shrink:0;
+  user-select:none;
+}
+.btn:hover{background:rgba(255,255,255,0.1);color:var(--text)}
+.btn:active{transform:scale(0.94)}
+.btn:disabled{opacity:0.25;cursor:default;transform:none}
+
+#url-bar{
+  flex:1;display:flex;align-items:center;gap:8px;
+  background:rgba(0,0,0,0.3);border:1px solid var(--border);
+  border-radius:20px;padding:5px 14px;
+  transition:border-color .2s,box-shadow .2s;
+}
+#url-bar:focus-within{border-color:var(--blue);box-shadow:0 0 0 3px rgba(79,163,227,0.12)}
+#proto{font-size:10px;font-weight:700;color:var(--green);background:rgba(64,220,128,0.1);padding:2px 7px;border-radius:4px;flex-shrink:0;letter-spacing:.3px}
+#url-input{
+  flex:1;background:transparent;border:none;outline:none;
+  color:var(--text);font-family:ui-monospace,monospace;font-size:12.5px;
+}
+#url-input::placeholder{color:var(--muted)}
+
+#go-btn{
+  padding:5px 14px;background:rgba(79,163,227,0.18);
+  border:1px solid rgba(79,163,227,0.35);border-radius:15px;
+  color:var(--blue);font-size:12px;font-weight:600;cursor:pointer;
+  transition:all .15s;flex-shrink:0;
+}
+#go-btn:hover{background:rgba(79,163,227,0.3)}
+
+/* ── CONTENT AREA ── */
+#content{flex:1;position:relative;background:#08111f;overflow:hidden}
+
+.page{position:absolute;inset:0;display:none}
+.page.active{display:flex;flex-direction:column}
+
+/* iframes */
+.frame-wrap{flex:1;position:relative}
+.frame-wrap iframe{width:100%;height:100%;border:none;background:#fff}
+.frame-overlay{
+  position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:16px;
+  background:rgba(8,17,31,0.92);color:var(--muted);font-size:13px;text-align:center;
+  pointer-events:none;opacity:0;transition:opacity .3s;
+}
+.frame-overlay.show{opacity:1;pointer-events:auto}
+.frame-overlay .big{font-size:40px;margin-bottom:4px}
+.frame-overlay h3{color:var(--text);font-size:16px;font-weight:600}
+
+/* ── HOME PAGE ── */
+#home-page{
+  align-items:center;justify-content:center;
+  padding:40px 20px;text-align:center;overflow-y:auto;
+}
+.logo-cloud{font-size:56px;margin-bottom:12px;filter:drop-shadow(0 0 24px rgba(79,163,227,0.5))}
+.logo-title{
+  font-size:34px;font-weight:800;letter-spacing:-1px;
+  background:linear-gradient(135deg,#dceeff 0%,#4fa3e3 50%,#38c9e8 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  margin-bottom:4px;
+}
+.logo-sub{font-size:11px;letter-spacing:3px;color:var(--muted);text-transform:uppercase;margin-bottom:36px}
+
+#home-search{
+  display:flex;align-items:center;gap:10px;
+  background:rgba(255,255,255,0.06);border:1px solid rgba(79,163,227,0.3);
+  border-radius:50px;padding:12px 18px;
+  width:100%;max-width:540px;margin-bottom:32px;
+  transition:all .25s;
+}
+#home-search:focus-within{border-color:var(--blue);box-shadow:0 0 0 4px rgba(79,163,227,0.12);background:rgba(79,163,227,0.06)}
+#home-search input{flex:1;background:transparent;border:none;outline:none;color:var(--text);font-size:14px}
+#home-search input::placeholder{color:var(--muted)}
+#home-search button{
+  padding:8px 20px;background:var(--blue);border:none;
+  border-radius:25px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;
+  transition:background .15s;
+}
+#home-search button:hover{background:#3a8fd4}
+
+.quick-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;max-width:420px;width:100%}
+.quick{
+  display:flex;flex-direction:column;align-items:center;gap:6px;
+  padding:14px 8px;background:var(--glass);border:1px solid var(--border);
+  border-radius:10px;cursor:pointer;font-size:11px;color:var(--muted);
+  transition:all .2s;
+}
+.quick:hover{background:rgba(255,255,255,0.09);color:var(--text);transform:translateY(-2px);border-color:rgba(79,163,227,0.35)}
+.quick span:first-child{font-size:24px}
+
+/* ── STATUS BAR ── */
+#statusbar{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:3px 14px;background:rgba(7,14,26,0.98);border-top:1px solid var(--border);
+  font-size:10.5px;color:var(--muted);font-family:ui-monospace,monospace;flex-shrink:0;
+}
+#status-dot{width:6px;height:6px;border-radius:50%;background:var(--green);margin-right:6px;display:inline-block}
+.stag{padding:1px 6px;border-radius:3px;background:rgba(79,163,227,0.12);color:var(--blue);font-size:10px}
+
+/* ── LOADING SPINNER ── */
+.spinner{
+  width:28px;height:28px;border:2px solid rgba(79,163,227,0.2);
+  border-top-color:var(--blue);border-radius:50%;
+  animation:spin .7s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* spin reload btn */
+.spinning{animation:spin .6s linear infinite}
+</style>
+</head>
+<body>
+<div class="clouds">
+  <div class="cloud c1"></div>
+  <div class="cloud c2"></div>
+  <div class="cloud c3"></div>
+</div>
+
+<div id="app">
+
+  <!-- TAB BAR -->
+  <div id="tab-bar">
+    <div class="tab active" data-id="home" onclick="activateTab('home')">
+      <span>☁️</span>
+      <span class="tab-title">Yeni Sekme</span>
+      <span class="tab-x" onclick="closeTab(event,'home')">✕</span>
+    </div>
+    <div id="new-tab" onclick="openTab()" title="Yeni sekme">+</div>
+  </div>
+
+  <!-- TOOLBAR -->
+  <div id="toolbar">
+    <div class="btn" id="btn-back"    onclick="navBack()"    title="Geri">&#8592;</div>
+    <div class="btn" id="btn-fwd"     onclick="navFwd()"     title="İleri">&#8594;</div>
+    <div class="btn" id="btn-reload"  onclick="navReload()"  title="Yenile">&#8635;</div>
+    <div class="btn"                  onclick="goHome()"      title="Ana Sayfa">&#8962;</div>
+
+    <div id="url-bar">
+      <span id="proto">https</span>
+      <input id="url-input" type="text" placeholder="Adres gir veya ara..." spellcheck="false"
+             value="cloud://home"
+             onkeydown="if(event.key==='Enter')navigate()">
+      <button id="go-btn" onclick="navigate()">Git</button>
+    </div>
+
+    <div class="btn" title="WPK Bilgisi" onclick="alert('CloudBrowser v1.0\nFormat: .wpk\nTema: Bulut ☁️')">&#8505;</div>
+  </div>
+
+  <!-- CONTENT -->
+  <div id="content">
+
+    <!-- HOME PAGE -->
+    <div class="page active" id="page-home">
+      <div id="home-page">
+        <div class="logo-cloud">☁️</div>
+        <div class="logo-title">CloudBrowser</div>
+        <div class="logo-sub">Bulut Temalı · .wpk Destekli</div>
+
+        <div id="home-search">
+          <span style="color:var(--muted);font-size:16px">🔍</span>
+          <input id="search-q" placeholder="Web'de ara veya URL gir..." onkeydown="if(event.key==='Enter')homeSearch()">
+          <button onclick="homeSearch()">Ara</button>
+        </div>
+
+        <div class="quick-grid">
+          <div class="quick" onclick="loadUrl('https://google.com')"><span>🌐</span><span>Google</span></div>
+          <div class="quick" onclick="loadUrl('https://github.com')"><span>🐙</span><span>GitHub</span></div>
+          <div class="quick" onclick="loadUrl('https://wikipedia.org')"><span>📖</span><span>Wikipedia</span></div>
+          <div class="quick" onclick="loadUrl('https://youtube.com')"><span>▶️</span><span>YouTube</span></div>
+          <div class="quick" onclick="loadUrl('https://news.ycombinator.com')"><span>🔶</span><span>HN</span></div>
+          <div class="quick" onclick="loadUrl('https://duckduckgo.com')"><span>🦆</span><span>DuckDuckGo</span></div>
+          <div class="quick" onclick="loadUrl('https://anthropic.com')"><span>🤖</span><span>Anthropic</span></div>
+          <div class="quick" onclick="openTab()"><span>➕</span><span>Yeni Sekme</span></div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+
+  <!-- STATUS BAR -->
+  <div id="statusbar">
+    <div>
+      <span id="status-dot"></span>
+      <span id="status-msg">Hazır</span>
+      &nbsp;&nbsp;<span class="stag">.wpk</span>
+      &nbsp;<span class="stag">CloudBrowser v1.0</span>
+    </div>
+    <div id="clock"></div>
+  </div>
+
+</div><!-- /app -->
+
+<script>
+/* ─────────────────────────────────────────────
+   STATE
+───────────────────────────────────────────── */
+let tabCounter = 1;
+let activeTabId = 'home';
+
+const tabs = {
+  home: { title:'Yeni Sekme', url:'cloud://home', history:[], histIdx:-1 }
+};
+
+/* ─────────────────────────────────────────────
+   CLOCK
+───────────────────────────────────────────── */
+function tick(){
+  document.getElementById('clock').textContent =
+    new Date().toLocaleTimeString('tr-TR');
+}
+setInterval(tick,1000); tick();
+
+/* ─────────────────────────────────────────────
+   STATUS
+───────────────────────────────────────────── */
+function setStatus(msg, color){
+  const el = document.getElementById('status-msg');
+  el.textContent = msg;
+  el.style.color = color || 'var(--muted)';
+  if(color) setTimeout(()=>{ el.style.color=''; setStatus('Hazır'); }, 3000);
+}
+
+/* ─────────────────────────────────────────────
+   PROTOCOL BADGE
+───────────────────────────────────────────── */
+function updateProto(url){
+  const p = document.getElementById('proto');
+  if(!url) return;
+  if(url.startsWith('cloud://')){  p.textContent='cloud'; p.style.color='#38c9e8'; p.style.background='rgba(56,201,232,0.1)'; }
+  else if(url.startsWith('https://')){ p.textContent='https'; p.style.color='var(--green)'; p.style.background='rgba(64,220,128,0.1)'; }
+  else if(url.startsWith('http://')){ p.textContent='http';  p.style.color='#f0c060'; p.style.background='rgba(240,192,96,0.1)'; }
+  else { p.textContent='?'; p.style.color='var(--muted)'; p.style.background='rgba(255,255,255,0.06)'; }
+}
+
+/* ─────────────────────────────────────────────
+   TAB MANAGEMENT
+───────────────────────────────────────────── */
+function activateTab(id){
+  if(!tabs[id]) return;
+  activeTabId = id;
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.id===id));
+  document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id==='page-'+id));
+  const t = tabs[id];
+  document.getElementById('url-input').value = t.url || '';
+  updateProto(t.url);
+  updateNavBtns();
+}
+
+function openTab(url){
+  tabCounter++;
+  const id = 'tab'+tabCounter;
+  tabs[id] = { title:'Yeni Sekme', url:'cloud://home', history:[], histIdx:-1 };
+
+  // DOM tab
+  const tab = document.createElement('div');
+  tab.className = 'tab';
+  tab.dataset.id = id;
+  tab.innerHTML = `<span>☁️</span><span class="tab-title">Yeni Sekme</span><span class="tab-x" onclick="closeTab(event,'${id}')">✕</span>`;
+  tab.onclick = () => activateTab(id);
+  document.getElementById('new-tab').before(tab);
+
+  // DOM page
+  const page = document.createElement('div');
+  page.className = 'page';
+  page.id = 'page-'+id;
+  page.innerHTML = buildHomePage();
+  document.getElementById('content').appendChild(page);
+
+  activateTab(id);
+  if(url) loadUrl(url);
+}
+
+function closeTab(e, id){
+  e.stopPropagation();
+  const allIds = Object.keys(tabs);
+  if(allIds.length === 1){ loadUrl('cloud://home'); return; }
+
+  const tabEl = document.querySelector(`.tab[data-id="${id}"]`);
+  const pageEl = document.getElementById('page-'+id);
+  if(tabEl) tabEl.remove();
+  if(pageEl) pageEl.remove();
+  delete tabs[id];
+
+  if(activeTabId === id){
+    const remaining = Object.keys(tabs);
+    activateTab(remaining[remaining.length-1]);
+  }
+}
+
+function buildHomePage(){
+  return `<div id="home-page">
+    <div class="logo-cloud">☁️</div>
+    <div class="logo-title">CloudBrowser</div>
+    <div class="logo-sub">Bulut Temalı · .wpk Destekli</div>
+    <div id="home-search">
+      <span style="color:var(--muted);font-size:16px">🔍</span>
+      <input placeholder="Web'de ara veya URL gir..." onkeydown="if(event.key==='Enter')homeSearch(this)">
+      <button onclick="homeSearch(this.previousElementSibling)">Ara</button>
+    </div>
+    <div class="quick-grid">
+      <div class="quick" onclick="loadUrl('https://google.com')"><span>🌐</span><span>Google</span></div>
+      <div class="quick" onclick="loadUrl('https://github.com')"><span>🐙</span><span>GitHub</span></div>
+      <div class="quick" onclick="loadUrl('https://wikipedia.org')"><span>📖</span><span>Wikipedia</span></div>
+      <div class="quick" onclick="loadUrl('https://youtube.com')"><span>▶️</span><span>YouTube</span></div>
+      <div class="quick" onclick="loadUrl('https://news.ycombinator.com')"><span>🔶</span><span>HN</span></div>
+      <div class="quick" onclick="loadUrl('https://duckduckgo.com')"><span>🦆</span><span>DuckDuckGo</span></div>
+      <div class="quick" onclick="loadUrl('https://anthropic.com')"><span>🤖</span><span>Anthropic</span></div>
+      <div class="quick" onclick="openTab()"><span>➕</span><span>Yeni Sekme</span></div>
+    </div>
+  </div>`;
+}
+
+/* ─────────────────────────────────────────────
+   NAVIGATION
+───────────────────────────────────────────── */
+function resolveUrl(raw){
+  raw = raw.trim();
+  if(!raw) return 'cloud://home';
+  if(raw.startsWith('cloud://') || raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+  // looks like domain
+  if(/^[\w-]+\.[\w.-]+/.test(raw)) return 'https://'+raw;
+  // search
+  return 'https://www.google.com/search?q='+encodeURIComponent(raw);
+}
+
+function navigate(){
+  const raw = document.getElementById('url-input').value;
+  loadUrl(resolveUrl(raw));
+}
+
+function homeSearch(inputEl){
+  const q = (inputEl || document.getElementById('search-q')).value.trim();
+  if(!q) return;
+  loadUrl(resolveUrl(q));
+}
+
+function loadUrl(url){
+  const t = tabs[activeTabId];
+  if(!t) return;
+
+  // push history
+  t.history = t.history.slice(0, t.histIdx+1);
+  t.history.push(url);
+  t.histIdx = t.history.length - 1;
+  t.url = url;
+
+  document.getElementById('url-input').value = url;
+  updateProto(url);
+  updateNavBtns();
+
+  if(url === 'cloud://home'){
+    showHomePage();
+    setTabTitle(activeTabId,'Yeni Sekme','☁️');
+    setStatus('Hazır');
+    return;
+  }
+
+  showIframe(url);
+}
+
+function showHomePage(){
+  const page = document.getElementById('page-'+activeTabId);
+  page.innerHTML = buildHomePage();
+  page.style.flexDirection='column';
+  page.style.alignItems='';
+  page.style.justifyContent='';
+  const hp = page.querySelector('#home-page');
+  if(hp){ hp.style.display='flex'; }
+}
+
+function showIframe(url){
+  setStatus('Yükleniyor... '+url, 'var(--blue)');
+  spinReload(true);
+
+  const page = document.getElementById('page-'+activeTabId);
+  page.innerHTML = `
+    <div class="frame-wrap">
+      <iframe id="frame-${activeTabId}" src="${url}"
+        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation"
+        allow="fullscreen"
+        onload="onFrameLoad(this,'${activeTabId}')"
+        onerror="onFrameError('${activeTabId}')">
+      </iframe>
+      <div class="frame-overlay" id="overlay-${activeTabId}">
+        <div class="spinner"></div>
+        <div class="big">🔒</div>
+        <h3>Bu site iframe içinde açılmıyor</h3>
+        <p style="max-width:320px">Çoğu site X-Frame-Options kısıtlaması koyar.<br>
+        <a href="${url}" target="_blank" style="color:var(--blue);text-decoration:none">↗ Doğrudan aç</a></p>
+      </div>
+    </div>`;
+}
+
+function onFrameLoad(iframe, tabId){
+  spinReload(false);
+  // try to get title
+  let title = '';
+  try { title = iframe.contentDocument.title; } catch(e){}
+  if(!title) title = new URL(iframe.src).hostname;
+  setTabTitle(tabId, title, getFavicon(iframe.src));
+  setStatus('Yüklendi: ' + iframe.src);
+
+  const overlay = document.getElementById('overlay-'+tabId);
+  if(overlay){
+    // if content loaded, hide overlay
+    try {
+      const body = iframe.contentDocument.body;
+      if(body && body.innerHTML.length > 0) overlay.classList.remove('show');
+      else overlay.classList.add('show');
+    } catch(e){
+      // cross-origin: content IS there but we can't read it — hide overlay
+      overlay.style.display = 'none';
+    }
+  }
+}
+
+function onFrameError(tabId){
+  spinReload(false);
+  const overlay = document.getElementById('overlay-'+tabId);
+  if(overlay) overlay.classList.add('show');
+  setStatus('Yüklenemedi', '#f06060');
+}
+
+function getFavicon(url){
+  try{
+    const h = new URL(url).hostname;
+    if(h.includes('google')) return '🌐';
+    if(h.includes('github')) return '🐙';
+    if(h.includes('youtube')) return '▶️';
+    if(h.includes('wikipedia')) return '📖';
+    if(h.includes('anthropic')) return '🤖';
+  }catch(e){}
+  return '🌍';
+}
+
+function setTabTitle(id, title, icon){
+  const tabEl = document.querySelector(`.tab[data-id="${id}"]`);
+  if(!tabEl) return;
+  const spans = tabEl.querySelectorAll('span');
+  if(icon) spans[0].textContent = icon;
+  spans[1].textContent = title.slice(0,24) || 'Sekme';
+  if(tabs[id]) tabs[id].title = title;
+}
+
+/* ─────────────────────────────────────────────
+   BACK / FWD / RELOAD
+───────────────────────────────────────────── */
+function updateNavBtns(){
+  const t = tabs[activeTabId];
+  if(!t) return;
+  document.getElementById('btn-back').style.opacity = t.histIdx > 0 ? '1' : '0.3';
+  document.getElementById('btn-fwd').style.opacity  = t.histIdx < t.history.length-1 ? '1' : '0.3';
+}
+
+function navBack(){
+  const t = tabs[activeTabId];
+  if(!t || t.histIdx <= 0) return;
+  t.histIdx--;
+  const url = t.history[t.histIdx];
+  t.url = url;
+  document.getElementById('url-input').value = url;
+  updateProto(url);
+  if(url==='cloud://home') showHomePage();
+  else showIframe(url);
+  updateNavBtns();
+}
+
+function navFwd(){
+  const t = tabs[activeTabId];
+  if(!t || t.histIdx >= t.history.length-1) return;
+  t.histIdx++;
+  const url = t.history[t.histIdx];
+  t.url = url;
+  document.getElementById('url-input').value = url;
+  updateProto(url);
+  if(url==='cloud://home') showHomePage();
+  else showIframe(url);
+  updateNavBtns();
+}
+
+function navReload(){
+  const t = tabs[activeTabId];
+  if(!t) return;
+  spinReload(true);
+  const url = t.url;
+  if(url==='cloud://home'){ showHomePage(); spinReload(false); return; }
+  const iframe = document.getElementById('frame-'+activeTabId);
+  if(iframe){ iframe.src = iframe.src; }
+  else showIframe(url);
+  setTimeout(()=>spinReload(false), 1500);
+}
+
+function spinReload(on){
+  const btn = document.getElementById('btn-reload');
+  if(on) btn.classList.add('spinning');
+  else btn.classList.remove('spinning');
+}
+
+function goHome(){
+  loadUrl('cloud://home');
+}
+
+// keyboard shortcuts
+document.addEventListener('keydown', e => {
+  if((e.ctrlKey||e.metaKey) && e.key==='t'){ e.preventDefault(); openTab(); }
+  if((e.ctrlKey||e.metaKey) && e.key==='w'){ e.preventDefault(); closeTab({stopPropagation:()=>{}}, activeTabId); }
+  if((e.ctrlKey||e.metaKey) && e.key==='l'){ e.preventDefault(); document.getElementById('url-input').select(); }
+  if((e.ctrlKey||e.metaKey) && e.key==='r'){ e.preventDefault(); navReload(); }
+});
+</script>
+</body>
+</html>
