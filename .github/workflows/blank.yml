@@ -1,114 +1,93 @@
-name: WindBrowser Build
+name: CloudBrowser — Build & Package
 
 on:
   push:
-    branches: ["main", "master"]
+    branches: [main]
   pull_request:
-    branches: ["main", "master"]
+    branches: [main]
   workflow_dispatch:
+
+env:
+  APP_NAME: CloudBrowser
+  WPK_VERSION: ${{ github.run_number }}
 
 jobs:
   build:
-    runs-on: windows-latest   # Wine yok, doğrudan Windows runner
+    name: Build & Bundle (.wpk)
+    runs-on: ubuntu-latest
 
     steps:
-      # ── 1. Kodu al ────────────────────────────────────────────────────────
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ── 2. Python kur ─────────────────────────────────────────────────────
-      - name: Python 3.11 kur
-        uses: actions/setup-python@v5
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          python-version: "3.11"
+          node-version: '20'
+          cache: 'npm'
 
-      # ── 3. Bağımlılıkları kur ─────────────────────────────────────────────
-      - name: PyQt5 ve PyInstaller kur
-        run: |
-          python -m pip install --upgrade pip
-          pip install PyQt5==5.15.10 PyQtWebEngine==5.15.6 pyinstaller==6.6.0
+      - name: Install dependencies
+        run: npm ci
 
-      # ── 4. .exe derle ─────────────────────────────────────────────────────
-      - name: PyInstaller ile EXE derle
-        run: |
-          pyinstaller `
-            --onefile `
-            --noconsole `
-            --name WindBrowser `
-            --distpath dist_win `
-            windbrowser.py
+      - name: Run tests
+        run: npm test --if-present
 
-      # ── 5. EXE kontrol ────────────────────────────────────────────────────
-      - name: EXE dogrula
+      - name: Build production bundle
+        run: npm run build
+
+      - name: Create .wpk package
         run: |
-          if (Test-Path "dist_win\WindBrowser.exe") {
-            $size = (Get-Item "dist_win\WindBrowser.exe").Length / 1MB
-            Write-Host ("WindBrowser.exe olustu: {0:N1} MB" -f $size)
-          } else {
-            Write-Error "WindBrowser.exe olusturulamadi!"
-            exit 1
+          echo "📦 Packaging CloudBrowser v$WPK_VERSION into .wpk..."
+          mkdir -p dist/package
+          cp -r build/* dist/package/
+          cat > dist/package/manifest.json << EOF
+          {
+            "name": "CloudBrowser",
+            "version": "$WPK_VERSION",
+            "extension": ".wpk",
+            "theme": "cloud",
+            "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "commit": "${{ github.sha }}",
+            "author": "${{ github.actor }}"
           }
+          EOF
+          cd dist
+          zip -r "../CloudBrowser_v${WPK_VERSION}.wpk" package/
+          echo "✅ .wpk package created: CloudBrowser_v${WPK_VERSION}.wpk"
 
-      # ── 6. .wind paketi oluştur ───────────────────────────────────────────
-      - name: WindBrowser.wind paketi olustur
-        run: |
-          New-Item -ItemType Directory -Force -Path wind_pkg\WindBrowser | Out-Null
-
-          Copy-Item windbrowser.py wind_pkg\WindBrowser\windbrowser.py
-
-          @"
-          AppName: WindBrowser
-          Version: 1.0.0
-          Description: WindOS Web Tarayicisi
-          Author: WindOS Project
-          License: MIT
-          MinOS: WindOS 1.0
-          Requires: PyQt5, PyQtWebEngine
-          "@ | Out-File -Encoding UTF8 wind_pkg\WindBrowser\manifest.txt
-
-          @"
-          WindBrowser v1.0 - WindOS Web Tarayicisi
-          =========================================
-          Kurulum : wind install WindBrowser.wind
-          Calistir: python windbrowser.py
-          "@ | Out-File -Encoding UTF8 wind_pkg\WindBrowser\README.txt
-
-          # .wind = tar.gz (7-Zip ile)
-          7z a -tgzip WindBrowser.wind wind_pkg\WindBrowser\*
-          Write-Host "WindBrowser.wind olustu"
-
-      # ── 7. Release zip ────────────────────────────────────────────────────
-      - name: Release ZIP olustur
-        run: |
-          New-Item -ItemType Directory -Force -Path release_bundle | Out-Null
-
-          Copy-Item dist_win\WindBrowser.exe release_bundle\WindBrowser.exe
-          Copy-Item WindBrowser.wind         release_bundle\WindBrowser.wind
-
-          @"
-          WindBrowser v1.0 - Surum Notlari
-          ==================================
-          WindBrowser.exe  : Windows 10/11 icin calistirilebilir dosya
-          WindBrowser.wind : WindOS icin kurulum paketi
-          "@ | Out-File -Encoding UTF8 release_bundle\RELEASE_NOTES.txt
-
-          Compress-Archive -Path release_bundle\* -DestinationPath WindBrowser-Release.zip
-          $size = (Get-Item WindBrowser-Release.zip).Length / 1MB
-          Write-Host ("Release ZIP: {0:N1} MB" -f $size)
-
-      # ── 8. Artifact yükle ─────────────────────────────────────────────────
-      - name: Artifact yukle
+      - name: Upload .wpk artifact
         uses: actions/upload-artifact@v4
         with:
-          name: WindBrowser-Release
-          path: WindBrowser-Release.zip
+          name: CloudBrowser-${{ env.WPK_VERSION }}.wpk
+          path: CloudBrowser_v${{ env.WPK_VERSION }}.wpk
           retention-days: 30
 
-      # ── 9. Özet ───────────────────────────────────────────────────────────
-      - name: Build ozeti
-        run: |
-          Write-Host ""
-          Write-Host "WindBrowser.exe  : $((Get-Item dist_win\WindBrowser.exe).Length / 1MB -as [int]) MB"
-          Write-Host "WindBrowser.wind : $((Get-Item WindBrowser.wind).Length / 1KB -as [int]) KB"
-          Write-Host "Release.zip      : $((Get-Item WindBrowser-Release.zip).Length / 1MB -as [int]) MB"
-          Write-Host "Build basarili!"
+  release:
+    name: Release .wpk
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Download .wpk artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: CloudBrowser-${{ env.WPK_VERSION }}.wpk
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.WPK_VERSION }}
+          name: CloudBrowser v${{ env.WPK_VERSION }}
+          body: |
+            ☁️ **CloudBrowser** — Bulut Temalı Tarayıcı
+            
+            ### Bu sürümdeki yenilikler
+            - `.wpk` paket formatı desteklendi
+            - Bulut temalı arayüz iyileştirmeleri
+            - Otomatik GitHub Actions build sistemi
+            
+            ### Kurulum
+            `.wpk` dosyasını indirin ve CloudBrowser loader ile açın.
+          files: "*.wpk"
+          token: ${{ secrets.GITHUB_TOKEN }}
