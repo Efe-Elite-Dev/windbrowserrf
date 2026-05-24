@@ -1,93 +1,62 @@
-name: CloudBrowser — Build & Package
+name: CloudBrowser — Build .wpk
 
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
-env:
-  APP_NAME: CloudBrowser
-  WPK_VERSION: ${{ github.run_number }}
+permissions:
+  contents: write
 
 jobs:
   build:
-    name: Build & Bundle (.wpk)
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run tests
-        run: npm test --if-present
-
-      - name: Build production bundle
-        run: npm run build
-
-      - name: Create .wpk package
+      - name: Package → CloudBrowser.wpk
         run: |
-          echo "📦 Packaging CloudBrowser v$WPK_VERSION into .wpk..."
-          mkdir -p dist/package
-          cp -r build/* dist/package/
-          cat > dist/package/manifest.json << EOF
+          mkdir -p package
+          cp index.html package/index.html
+          cat > package/manifest.json << MANIFEST
           {
             "name": "CloudBrowser",
-            "version": "$WPK_VERSION",
+            "version": "${{ github.run_number }}",
             "extension": ".wpk",
             "theme": "cloud",
+            "entry": "index.html",
             "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "commit": "${{ github.sha }}",
             "author": "${{ github.actor }}"
           }
-          EOF
-          cd dist
-          zip -r "../CloudBrowser_v${WPK_VERSION}.wpk" package/
-          echo "✅ .wpk package created: CloudBrowser_v${WPK_VERSION}.wpk"
+          MANIFEST
+          cd package && zip -r ../CloudBrowser.wpk . && cd ..
+          echo "✅ CloudBrowser.wpk oluşturuldu"
+          ls -lh CloudBrowser.wpk
 
-      - name: Upload .wpk artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: CloudBrowser-${{ env.WPK_VERSION }}.wpk
-          path: CloudBrowser_v${{ env.WPK_VERSION }}.wpk
-          retention-days: 30
+          name: CloudBrowser.wpk
+          path: CloudBrowser.wpk
 
-  release:
-    name: Release .wpk
-    runs-on: ubuntu-latest
-    needs: build
-    if: github.ref == 'refs/heads/main'
-
-    steps:
-      - name: Download .wpk artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: CloudBrowser-${{ env.WPK_VERSION }}.wpk
-
-      - name: Create GitHub Release
+      - name: Create Release (sadece main push)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ env.WPK_VERSION }}
-          name: CloudBrowser v${{ env.WPK_VERSION }}
+          tag_name: v${{ github.run_number }}
+          name: "☁️ CloudBrowser v${{ github.run_number }}"
           body: |
-            ☁️ **CloudBrowser** — Bulut Temalı Tarayıcı
-            
-            ### Bu sürümdeki yenilikler
-            - `.wpk` paket formatı desteklendi
-            - Bulut temalı arayüz iyileştirmeleri
-            - Otomatik GitHub Actions build sistemi
-            
-            ### Kurulum
-            `.wpk` dosyasını indirin ve CloudBrowser loader ile açın.
-          files: "*.wpk"
-          token: ${{ secrets.GITHUB_TOKEN }}
+            ### ☁️ CloudBrowser v${{ github.run_number }}
+
+            **Kurulum:** `CloudBrowser.wpk` dosyasını indirip `.zip` olarak aç, `index.html`'i tarayıcıda aç.
+
+            **Özellikler:**
+            - Gerçek iframe tabanlı web gezintisi
+            - Çoklu sekme (Ctrl+T / Ctrl+W)
+            - Geri / İleri / Yenile geçmişi
+            - `cloud://` özel protokol
+            - Bulut temalı animasyonlu arayüz
+          files: CloudBrowser.wpk
